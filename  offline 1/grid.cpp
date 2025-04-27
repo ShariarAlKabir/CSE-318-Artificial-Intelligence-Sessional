@@ -6,12 +6,18 @@ public:
     int gridSize, costValue;
     float heuristicValue, priorityValue;
     vector<int> numbers;
-    shared_ptr<Grid> parent;
+    Grid* parent; // raw pointer
 
-    Grid(int gridSize, vector<int> numbers, int costValue = 0, shared_ptr<Grid> parent = nullptr)
+    Grid(int gridSize, vector<int> numbers, int costValue = 0, Grid* parent = nullptr)
         : gridSize(gridSize), numbers(numbers), costValue(costValue), parent(parent) {
-        heuristicValue = heuristicFunction(1); // Manhattan heuristic
+        heuristicValue = heuristicFunction(0); // Manhattan heuristic
         priorityValue = costValue + heuristicValue;
+    }
+
+    ~Grid() {
+        // Important: Don't delete parent here.
+        // Otherwise multiple nodes pointing to the same parent would cause double free.
+        // We manage parent separately in NPuzzle during backtrack.
     }
 
     int hammingDistance() {
@@ -74,9 +80,9 @@ public:
         int idx = findBlankIndex();
         next.swap(idx, idx - 1);
         next.costValue++;
-        next.heuristicValue = next.heuristicFunction(1);
+        next.heuristicValue = next.heuristicFunction(0);
         next.priorityValue = next.costValue + next.heuristicValue;
-        next.parent = make_shared<Grid>(*this);
+        next.parent = new Grid(*this); // allocate
         return next;
     }
 
@@ -85,9 +91,9 @@ public:
         int idx = findBlankIndex();
         next.swap(idx, idx + 1);
         next.costValue++;
-        next.heuristicValue = next.heuristicFunction(1);
+        next.heuristicValue = next.heuristicFunction(0);
         next.priorityValue = next.costValue + next.heuristicValue;
-        next.parent = make_shared<Grid>(*this);
+        next.parent = new Grid(*this);
         return next;
     }
 
@@ -96,9 +102,9 @@ public:
         int idx = findBlankIndex();
         next.swap(idx, idx - gridSize);
         next.costValue++;
-        next.heuristicValue = next.heuristicFunction(1);
+        next.heuristicValue = next.heuristicFunction(0);
         next.priorityValue = next.costValue + next.heuristicValue;
-        next.parent = make_shared<Grid>(*this);
+        next.parent = new Grid(*this);
         return next;
     }
 
@@ -107,9 +113,9 @@ public:
         int idx = findBlankIndex();
         next.swap(idx, idx + gridSize);
         next.costValue++;
-        next.heuristicValue = next.heuristicFunction(1);
+        next.heuristicValue = next.heuristicFunction(0);
         next.priorityValue = next.costValue + next.heuristicValue;
-        next.parent = make_shared<Grid>(*this);
+        next.parent = new Grid(*this);
         return next;
     }
 
@@ -165,9 +171,12 @@ public:
         while (!openList.empty()) {
             Grid current = openList.top();
             openList.pop();
-            exploredCount++; // Every time we pop, we explore a node
+            exploredCount++;
     
-            if (visited.count(current.numbers)) continue;
+            if (visited.count(current.numbers)) {
+                delete current.parent;
+                continue;
+            }
             visited.insert(current.numbers);
     
             if (current.isSolved()) {
@@ -175,19 +184,26 @@ public:
                 cout << "Nodes explored: " << exploredCount << endl;
                 cout << "Nodes expanded: " << expandedCount << endl;
     
-                // Backtrack and collect steps
+                // Collect steps
                 vector<Grid> steps;
-                shared_ptr<Grid> ptr = make_shared<Grid>(current);
+                vector<Grid*> toDelete;
+                Grid* ptr = new Grid(current); // Deep copy current first
                 while (ptr) {
                     steps.push_back(*ptr);
+                    if (ptr->parent) toDelete.push_back(ptr);
                     ptr = ptr->parent;
                 }
                 reverse(steps.begin(), steps.end());
     
-                // Print all steps
+                // Print steps
                 for (int i = 0; i < steps.size(); ++i) {
                     cout << "Step " << i << ":\n";
                     steps[i].print();
+                }
+    
+                // Cleanup heap memory
+                for (Grid* g : toDelete) {
+                    delete g;
                 }
     
                 return;
@@ -196,9 +212,11 @@ public:
             for (Grid neighbor : current.getAllMoves()) {
                 if (!visited.count(neighbor.numbers)) {
                     openList.push(neighbor);
+                } else {
+                    delete neighbor.parent;
                 }
             }
-            expandedCount++; // After generating neighbors, we consider current node expanded
+            expandedCount++;
         }
     
         cout << "No solution found.\n";
